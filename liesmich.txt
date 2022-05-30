@@ -1,0 +1,61 @@
+Sofortsuche (Instant Search) 2.1.0 für Zen Cart 1.5.7 deutsch
+2022-05-30 - webchills
+Anpassung des Moduls Instant Search (https://www.zen-cart.com/downloads.php?do=file&id=1336) für die deutsche Zen Cart Version
+
+Dieses Modul ist ausschließlich für die deutsche Zen Cart Version 1.5.7 geeignet
+getestet mit den Templates responsive_classic und bootstrap
+
+Sinn und Zweck:
+Sobald ein Besucher beginnt, in ein beliebiges Sucheingabefeld im Shop (Suchfeld in der Kopfzeile oder Suchfeld in einer Sidebox) zu tippen, werden die Suchbegriffe in der Datenbank gesucht und die Ergebnisse sofort in einem Dropdown-Menü unterhalb des Eingabefeldes angezeigt.
+Es kann - je nach Einstellung in der Konfiguration - auch nach Kategorienamen oder Herstellernamen gesucht werden, solche Ergebnisse werden dann entsprechend gruppiert angezeigt.
+Auch eine Einbeziehung von Attributmerkmalen in die Suche ist möglich.
+Je nach Einstellung in der Konfiguration werden auch Thumbnails der Artikelbilder und der Preis angezeigt.
+Um die Anzeige des Preises platzsparender zu machen, wird der Hinweis "inkl. Mwst. zzgl. Versandkosten" in dem Suchergebnisdropdown nicht angezeigt.
+Der im Ergebnis enthaltene Suchbegriff wird hervorgehoben.
+
+Demo des Moduls:
+https://sofortsuche157.zencartdemo.at
+
+
+
+INSTALLATION
+
+1.
+Im Ordner NEUE DATEIEN den Ordner DEINADMIN auf den Namen Ihres Adminverzeichnisses umbenennen.
+Im Ordner NEUE DATEIEN den Ordner includes/templates/DEINTEMPLATE auf den Namen des im Shop aktiven Templates umbenennen (z.B. responsive_classic)
+Im Ordner NEUE DATEIEN den Ordner includes/languages/german/extra_definitions/DEINTEMPLATE auf den Namen des im Shop aktiven Templates umbenennen (z.B. responsive_classic)
+Im Ordner NEUE DATEIEN den Ordner includes/languages/english/extra_definitions/DEINTEMPLATE auf den Namen des im Shop aktiven Templates umbenennen (z.B. responsive_classic)
+
+2.
+In die Zen Cart Administration einloggen.
+
+3.
+Danach den Inhalt des Ordners NEUE DATEIEN in der vorgegebenen Struktur ins Shopverzeichnis hochladen, dabei werden keinerlei bestehende Dateien überschrieben.
+
+4.
+In der Zen Cart Administration auf irgendeinen Menüpunkt clicken
+Sie sehen grüne Erfolgsmeldungen und danach ist unter Konfiguration der neue Menüpunkt Sofortsuche Konfiguration vorhanden
+Hier Sofortsuche aktivieren auf true stellen und die restlichen Einstellungen nach Ihren Wünschen vornehmen.
+
+5.
+Tippen Sie nun im Suchfeld im Frontend einen Suchbegriff ein und prüfen Sie die Funktionalität.
+
+
+
+FEINTUNING
+Anpassungen für das Layout der Suchergebnisausgabe im Stylesheet includes/templates/DEINTEMPLATE/css/stylesheet_instant_search.css möglich
+Wenn Sie in Shops mit sehr vielen Artikeln und sehr vielen Attributen Performanceprobleme bei der Sofortsuche feststellen, deaktivieren Sie die entsprechendn Abfragen in der Modulkonfiguration.
+
+
+
+
+DEINSTALLATION
+
+1.
+Alle von diesem Modul neu angelegten Dateien vom Server entfernen
+
+2.
+Die uninstall.sql im Ordner UNINSTALL mit einem Texteditor öffnen und den Inhalt kopieren
+Einfügen ins Eingabefeld unter Tools > SQL Patches installieren und absenden
+
+
