@@ -1,5 +1,5 @@
-Sofortsuche (Instant Search) 2.1.0 für Zen Cart 1.5.7 deutsch
-2022-05-30 - webchills
+Sofortsuche (Instant Search) 2.1.1 für Zen Cart 1.5.7 deutsch
+2022-10-26 - webchills
 Anpassung des Moduls Instant Search (https://www.zen-cart.com/downloads.php?do=file&id=1336) für die deutsche Zen Cart Version
 
 Dieses Modul ist ausschließlich für die deutsche Zen Cart Version 1.5.7 geeignet

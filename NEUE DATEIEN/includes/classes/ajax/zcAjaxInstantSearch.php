@@ -7,7 +7,7 @@
  * Zen Cart German Version - www.zen-cart-pro.at
  * @copyright Portions Copyright 2003 osCommerce
  * @license https://www.zen-cart-pro.at/license/3_0.txt GNU General Public License V3.0
- * @version $Id: zcAjaxInstantSearch.php 2022-05-30 10:21:16Z webchills $
+ * @version $Id: zcAjaxInstantSearch.php 2022-10-26 12:21:16Z webchills $
  */
 
 class zcAjaxInstantSearch extends base
@@ -20,7 +20,7 @@ class zcAjaxInstantSearch extends base
         global $template;
 
         $instantSearchResults = [];
-        $wordSearch = !empty($_POST['query']) && !empty(trim($_POST['query'])) ? trim($_POST['query']) : '';
+        $wordSearch = trim($_POST['query'] ?? '');
         $wordSearchLength = strlen($wordSearch);
 
         if ($wordSearch !== '' && $wordSearchLength >= INSTANT_SEARCH_MIN_WORDSEARCH_LENGTH && $wordSearchLength <= INSTANT_SEARCH_MAX_WORDSEARCH_LENGTH) {
@@ -178,7 +178,7 @@ class zcAjaxInstantSearch extends base
                     'type'  => $type,
                     'id'    => $id,
                     'name'  => $name,
-                    'img'   => $img,
+                    'img'   => ($img ?? ''),
                     'model' => $model,
                     'mtch'  => $totalMatches,
                     'views' => $views,
