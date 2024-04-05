@@ -41,14 +41,11 @@ Unter Konfiguration ist nun der neue Menüpunkt "Sofortsuche Konfiguration" vorh
 Tippen Sie nun im Suchfeld im Frontend einen Suchbegriff ein und prüfen Sie die Funktionalität.
 
 
-FEINTUNING
-Anpassungen für das Layout der Suchergebnisausgabe im Stylesheet includes/templates/DEINTEMPLATE/css/stylesheet_instant_search.css möglich
-
-
 HINWEIS FÜR DAS UPDATE VON ÄLTEREN VERSIONEN
 
 Dieses Modul wurde in Version 4.0.3 komplett überarbeitet und verwendet nun die Codebasis von marco-pm
 Und es wurde auf Installation mittels Plugin Manager umgestellt.
+
 Sollten Sie in Ihrem 1.5.7 deutsch Shop bereits eine ältere Version dieses Moduls verwenden, z.B. 2.1.1, dann entfernen Sie zunächst - falls vorhanden - folgende Dateien aus Ihrer Shopinstallation:
 DEINADMIN/includes/auto_loaders/config.instant-search.php
 DEINADMIN/includes/init_includes/init_instant-search.php
@@ -65,10 +62,17 @@ Erst dann gehen Sie so vor wie unter Installation beschrieben.
 Ihre alten Konfigurationseinstellungen werden bei der Installation über den Plugin Manager automatisch entfernt und mit den neuen ersetzt.
 
 
-
-
 DEINSTALLATION
 
-Das Modul kann über Module > Plugin Manager deaktiviert oder vollständig deinstalliert werden
+Das Modul kann über Module > Plugin Manager vollständig datenbankseitig deinstalliert werden.
+Bitte beachten, dass dadurch nicht die von diesem Modul neu zum Frontend hinzugefügten Dateien vom Server gelöscht werden.
+Die von diesem Modul neu hinzugefügten Dateien also danach wieder vom Server löschen.
+Über den Modulmanager können Sie mit der Funktion Unerwünschte Plugin-Versionsverzeichnisse entfernen verwenden und "Aufräumen" zusätzlich das Pluginverzeichnis 4.0.3 unter zc_plugins/instant-search entfernen.
+
+
+FEINTUNING
+
+Anpassungen für das Layout der Suchergebnisausgabe im Stylesheet includes/templates/DEINTEMPLATE/css/stylesheet_instant_search.css möglich.
+Das Dropdown passt sich an die Breite des Suchfeldes an. Soll es breiter werden, dann die Breite des Suchfeldes im normalen Stylesheet erhöhen, z.B. #navMainSearch
 
 
