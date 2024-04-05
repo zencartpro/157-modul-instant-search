@@ -1,36 +1,33 @@
 <?php
 /**
- * @package Instant Search
- * @copyright Copyright Ayoob G 2009-2011
- * Zen Cart German Specific 
- * @copyright Copyright 2003-2022 Zen Cart Development Team
- * Zen Cart German Version - www.zen-cart-pro.at
- * @copyright Portions Copyright 2003 osCommerce
- * @license https://www.zen-cart-pro.at/license/3_0.txt GNU General Public License V3.0
- * @version $Id: instant_search_functions.php 2022-05-30 10:25:16Z webchills $
+ * @package  Instant Search Plugin for Zen Cart German
+ * @author   marco-pm
+ * @version  4.0.3
+ * @see      https://github.com/marco-pm/zencart_instantsearch
+ * @license  GNU Public License V2.0
+ * modified for Zen Cart German
+ * 2024-04-05 webchills
  */
 
 /**
- * Returns the number of products per manufacturer.
+ * Returns the number of (enabled) products per manufacturer.
  *
- * @param $manufacturers_id
- * @param $include_inactive
- * @return int
+ * @param int $manufacturers_id Manufacturer's id
+ *
+ * @return int Products count
  */
-function zen_count_products_for_manufacturer($manufacturers_id, $include_inactive = false): int
+function zen_count_products_for_manufacturer(int $manufacturers_id): int
 {
     global $db;
 
-    $products_count = 0;
-    $products_query = "SELECT COUNT(products_id) AS total
-                       FROM " . TABLE_PRODUCTS . "
-                       WHERE manufacturers_id = " . (int)$manufacturers_id ."
-                       " . ($include_inactive === true ? ' AND products_status = 1': '');
+    $products = $db->Execute("
+        SELECT COUNT(products_id) AS total
+        FROM " . TABLE_PRODUCTS . "
+        WHERE manufacturers_id = " . $manufacturers_id . "
+        AND products_status = 1
+    ");
 
-    $products = $db->Execute($products_query);
-    $products_count += $products->fields['total'];
-
-    return $products_count;
+    return (int)$products->fields['total'];
 }
 /**
  * Returns the display price without vatAddon for instant search results.

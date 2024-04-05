@@ -1,238 +1,431 @@
 <?php
 /**
- * @package Instant Search
- * @copyright Copyright Ayoob G 2009-2011
- * Zen Cart German Specific 
- * @copyright Copyright 2003-2022 Zen Cart Development Team
- * Zen Cart German Version - www.zen-cart-pro.at
- * @copyright Portions Copyright 2003 osCommerce
- * @license https://www.zen-cart-pro.at/license/3_0.txt GNU General Public License V3.0
- * @version $Id: zcAjaxInstantSearch.php 2022-10-26 12:21:16Z webchills $
+ * @package  Instant Search Plugin for Zen Cart German
+ * @author   marco-pm
+ * @version  4.0.3
+ * @see      https://github.com/marco-pm/zencart_instantsearch
+ * @license  GNU Public License V2.0
+ * modified for Zen Cart German
+ * 2024-04-05 webchills
  */
+
+declare(strict_types=1);
+
+use Zencart\Plugins\Catalog\InstantSearch\InstantSearch;
+use Zencart\Plugins\Catalog\InstantSearch\InstantSearchLogger;
+use Zencart\Plugins\Catalog\InstantSearch\MysqlInstantSearch;
+use Zencart\Plugins\Catalog\Typesense\TypesenseInstantSearch;
 
 class zcAjaxInstantSearch extends base
 {
     /**
-     * Ajax instant search function.
+     * The name of the TypesenseInstantSearch class.
+     *
+     * @var string
      */
-    public function instantSearch()
+    protected const TYPESENSE_INSTANT_SEARCH_CLASS_NAME = TypesenseInstantSearch::class;
+
+    /**
+     * The search query.
+     *
+     * @var string
+     */
+    protected string $searchQuery;
+
+    /**
+     * Array of search results (for testing purposes).
+     *
+     * @var array
+     */
+    protected array $results;
+
+    /**
+     * The InstantSearch concrete class to use.
+     *
+     * @var InstantSearch
+     */
+    protected InstantSearch $instantSearch;
+
+    /**
+     * @var InstantSearchLogger
+     */
+    protected InstantSearchLogger $logger;
+
+    /**
+     * Constructor.
+     *
+     * @param InstantSearch|null $instantSearch
+     */
+    public function __construct(InstantSearch $instantSearch = null)
+    {
+        $this->results = [];
+        $this->logger = new InstantSearchLogger('instantsearch-ajax');
+
+        if ($instantSearch !== null) {
+            $this->instantSearch = $instantSearch;
+        } else {
+            $useMySql = false;
+
+            if (defined('INSTANT_SEARCH_ENGINE') && INSTANT_SEARCH_ENGINE === 'Typesense') {
+                if (!class_exists(self::TYPESENSE_INSTANT_SEARCH_CLASS_NAME)) {
+                    $this->logger->writeErrorLog('TypesenseInstantSearch class not found, falling back to MySQL');
+                    $useMySql = true;
+                } else {
+                    try {
+                        $className = self::TYPESENSE_INSTANT_SEARCH_CLASS_NAME;
+                        $this->instantSearch = new $className();
+                    } catch (Exception $e) {
+                        $this->logger->writeErrorLog('TypesenseInstantSearch class not found, falling back to MySQL', $e);
+                        $useMySql = true;
+                    }
+                }
+            } else {
+                $useMySql = true;
+            }
+
+            if ($useMySql) {
+                $this->instantSearch = new MysqlInstantSearch(INSTANT_SEARCH_MYSQL_USE_QUERY_EXPANSION === 'true');
+            }
+        }
+    }
+
+    /**
+     * AJAX-callable method that performs the search on $_POST['keyword'] with scope $_POST['scope'] (dropdown or page)
+     * and returns a JSON-encoded array with the results count and the results in HTML format.
+     *
+     * @return string
+     */
+    public function instantSearch(): string
+    {
+        // Initial checks on the $_POST variables
+        if (!isset($_POST['keyword']) || !isset($_POST['scope']) || ($_POST['scope'] !== 'dropdown' && $_POST['scope'] !== 'page')) {
+            return json_encode(['count' => 0, 'results' => []]);
+        }
+
+        $this->searchQuery = trim(html_entity_decode(str_replace('&nbsp;', ' ', strtolower(strip_tags($_POST['keyword']))), ENT_NOQUOTES, 'utf-8'));
+        $searchQueryLength = strlen($this->searchQuery);
+
+        // Additional checks on the input query
+        if ($this->searchQuery === '' ||
+            (
+                $_POST['scope'] === 'dropdown' && (
+                    $searchQueryLength < INSTANT_SEARCH_DROPDOWN_MIN_WORDSEARCH_LENGTH ||
+                    $searchQueryLength > INSTANT_SEARCH_DROPDOWN_MAX_WORDSEARCH_LENGTH
+                )
+            )
+        ) {
+            return json_encode(['count' => 0, 'results' => []]);
+        }
+
+
+        // ------
+        // Begin of arguments setting for the search function
+        // ------
+
+        $searchFields = explode(',', INSTANT_SEARCH_PRODUCT_FIELDS_LIST);
+
+        if ($_POST['scope'] === 'dropdown') {
+            $productsLimit      = (int)INSTANT_SEARCH_DROPDOWN_MAX_PRODUCTS;
+            $alphaFilterId      = null;
+            $addToSearchLog     = INSTANT_SEARCH_DROPDOWN_ADD_LOG_ENTRY === 'true';
+            $searchLogPrefix    = TEXT_SEARCH_LOG_ENTRY_DROPDOWN_PREFIX;
+            $categoriesLimit    = (int)INSTANT_SEARCH_DROPDOWN_MAX_CATEGORIES;
+            $manufacturersLimit = (int)INSTANT_SEARCH_DROPDOWN_MAX_MANUFACTURERS;
+        } else {
+            $resultPage = !empty($_POST['resultPage']) && (int)$_POST['resultPage'] > 0
+                ? (int)$_POST['resultPage']
+                : 1;
+
+            // If a custom sort is applied, set the sql limit to the maximum value (we need to fetch all
+            // the products from the database in order to properly sort them, otherwise at every "ajax page" loaded
+            // the displayed results would change)
+            $productsLimit = !empty($_POST['sort']) && $_POST['sort'] !== '20a'
+                ? (int)INSTANT_SEARCH_PAGE_RESULTS_PER_SCREEN
+                : min((int)INSTANT_SEARCH_PAGE_RESULTS_PER_SCREEN, (int)INSTANT_SEARCH_PAGE_RESULTS_PER_PAGE * $resultPage);
+
+            $alphaFilterId = isset($_POST['alpha_filter_id']) && (int)$_POST['alpha_filter_id'] > 0
+                ? (int)$_POST['alpha_filter_id']
+                : null;
+
+            if ($resultPage !== 1) {
+                $addToSearchLog = false; // avoid saving multiple log entries when the user scrolls the results page
+            } else {
+                $addToSearchLog = INSTANT_SEARCH_PAGE_ADD_LOG_ENTRY === 'true';
+            }
+
+            $searchLogPrefix = TEXT_SEARCH_LOG_ENTRY_PAGE_PREFIX;
+            $categoriesLimit = 0;
+            $manufacturersLimit = 0;
+        }
+
+        // ------
+        // End of arguments setting for the search function
+        // ------
+
+
+        // Run the search and get the results
+        try {
+            $results = $this->instantSearch->runSearch(
+                $this->searchQuery,
+                $searchFields,
+                $productsLimit,
+                $categoriesLimit,
+                $manufacturersLimit,
+                $alphaFilterId,
+                $addToSearchLog,
+                $searchLogPrefix,
+            );
+        } catch (Exception $e) {
+            if (defined('INSTANT_SEARCH_ENGINE') && INSTANT_SEARCH_ENGINE === 'Typesense' && is_a($this->instantSearch, self::TYPESENSE_INSTANT_SEARCH_CLASS_NAME)) {
+                // Fallback to MySQL
+                $this->logger->writeErrorLog('Typesense search error, falling back to MySQL', $e);
+                $this->instantSearch = new MysqlInstantSearch(INSTANT_SEARCH_MYSQL_USE_QUERY_EXPANSION === 'true');
+                return $this->instantSearch();
+            }
+
+            $this->logger->writeErrorLog('MySQL search error', $e);
+            return json_encode(['count' => 0, 'results' => []]);
+        }
+
+        $this->results = $results;
+
+        $this->notify('NOTIFY_INSTANT_SEARCH_BEFORE_FORMAT_RESULTS', $this->searchQuery, $results);
+
+        try {
+            return json_encode([
+                'count' => count($results),
+                'results' => $_POST['scope'] === 'dropdown'
+                    ? $this->formatDropdownResults($results)
+                    : $this->formatPageResults($results),
+            ], JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            $this->logger->writeErrorLog('JSON encoding error', $e);
+            return json_encode(['count' => 0, 'results' => []]);
+        }
+    }
+
+    /**
+     * Returns the search results formatted with the dropdown template.
+     *
+     * @param  array  $results
+     * @return string HTML output with the formatted results.
+     */
+    protected function formatDropdownResults(array $results): string
     {
         global $template;
 
-        $instantSearchResults = [];
-        $wordSearch = trim($_POST['query'] ?? '');
-        $wordSearchLength = strlen($wordSearch);
-
-        if ($wordSearch !== '' && $wordSearchLength >= INSTANT_SEARCH_MIN_WORDSEARCH_LENGTH && $wordSearchLength <= INSTANT_SEARCH_MAX_WORDSEARCH_LENGTH) {
-            $wordSearchPlus = trim(preg_replace('/\s+/', ' ', preg_quote($wordSearch, '&')));
-            $wordSearchPlusArray = explode(' ', $wordSearchPlus);
-            $wordSearchPlus = preg_replace('/\s/', '|', $wordSearchPlus);
-
-            // search products
-            $instantSearchResults = $this->execInstantSearchForType('product', $wordSearch, $wordSearchPlus, $wordSearchPlusArray);
-
-            // search categories
-            if (INSTANT_SEARCH_INCLUDE_CATEGORIES === 'true') {
-                array_push($instantSearchResults, ...$this->execInstantSearchForType('category', $wordSearch, $wordSearchPlus, $wordSearchPlusArray));
-            }
-
-            // search manufacturers
-            if (INSTANT_SEARCH_INCLUDE_MANUFACTURERS === 'true') {
-                array_push($instantSearchResults, ...$this->execInstantSearchForType('manufacturer', $wordSearch, $wordSearchPlus, $wordSearchPlusArray));
-            }
-
-            // order by number of matches (desc),
-            // then by words that occur first in the title,
-            // then by number of views (desc)
-            usort($instantSearchResults, static function($prod1, $prod2) {
-                return
-                    [$prod2['mtch'], $prod1['fsum'], $prod2['views']]
-                    <=>
-                    [$prod1['mtch'], $prod2['fsum'], $prod1['views']];
-            });
-
-            $instantSearchResults = array_slice($instantSearchResults, 0, INSTANT_SEARCH_MAX_NUMBER_OF_RESULTS);
-
-            foreach ($instantSearchResults as $i => $instantSearchResult) {
-                $instantSearchResults[$i] = $this->formatSearchResult($instantSearchResult, $wordSearchPlus);
-            }
-
-            ob_start();
-            require $template->get_template_dir('tpl_ajax_instant_search_results.php', DIR_WS_TEMPLATE, FILENAME_DEFAULT, 'templates') . '/tpl_ajax_instant_search_results.php';
-            return ob_get_clean();
+        if (empty($results)) {
+            return '';
         }
 
-        return [];
-    }
+        $dropdownResults = [];
+        $categoriesReached = false;
+        $manufacturersReached = false;
 
-    /**
-     * Executes the instant search on database for $type, where $type can be "product", "category" or "manufacturer".
-     */
-    protected function execInstantSearchForType($type, $wordSearch, $wordSearchPlus, $wordSearchPlusArray)
-    {
-        global $db;
-        $instantSearchResults = [];
+        foreach ($results as $result) {
+            $dropdownResult = [];
 
-        switch ($type) {
-            case 'product':
-            default:
-                $sql = "SELECT DISTINCT p.products_id, pd.products_name, p.products_model, p.products_image, pd.products_viewed
-                        FROM " . TABLE_PRODUCTS_DESCRIPTION . " pd
-                        LEFT JOIN " . TABLE_PRODUCTS . " p ON p.products_id = pd.products_id " .
-                        (INSTANT_SEARCH_INCLUDE_OPTIONS_VALUES === 'true'
-                            ? "LEFT JOIN " . TABLE_PRODUCTS_ATTRIBUTES . " pa ON pa.products_id = p.products_id 
-                               LEFT JOIN " . TABLE_PRODUCTS_OPTIONS_VALUES . " pov ON pov.products_options_values_id = pa.options_values_id AND pov.language_id = :languagesId: "
-                            : ""
-                        ) . "
-                        WHERE p.products_status <> 0
-                        AND (
-                                (pd.products_name REGEXP :wordSearchPlus:)" .
-                                (INSTANT_SEARCH_INCLUDE_PRODUCT_MODEL === 'true' ? " OR (p.products_model REGEXP :wordSearchPlus:)" : "") .
-                                (INSTANT_SEARCH_INCLUDE_OPTIONS_VALUES === 'true' ? " OR (pov.products_options_values_name REGEXP :wordSearchPlus:)" : "") . "
-                            )
-                        AND pd.language_id = :languagesId:";
-                break;
+            if (!empty($result['products_id'])) {
+                $id    = $result['products_id'];
+                $name  = $result['products_name'];
+                $img   = $result['products_image'];
+                $model = $result['products_model'];
 
-            case 'category':
-                $sql = "SELECT c.categories_id, cd.categories_name, c.categories_image
-                        FROM " . TABLE_CATEGORIES . " c
-                        LEFT JOIN " . TABLE_CATEGORIES_DESCRIPTION . " cd ON cd.categories_id = c.categories_id
-                        WHERE c.categories_status <> 0
-                        AND (cd.categories_name REGEXP :wordSearchPlus:)
-                        AND cd.language_id = :languagesId:";
-                break;
-
-            case 'manufacturer':
-                $sql = "SELECT DISTINCT m.manufacturers_id, m.manufacturers_name, m.manufacturers_image
-                        FROM " . TABLE_PRODUCTS . " p
-                        LEFT JOIN " . TABLE_MANUFACTURERS . " m ON m.manufacturers_id = p.manufacturers_id
-                        WHERE p.products_status <> 0
-                        AND (m.manufacturers_name REGEXP :wordSearchPlus:)";
-                break;
-        }
-
-        $this->notify('NOTIFY_INSTANT_SEARCH_QUERY', $type, $sql);
-
-        $sql = $db->bindVars($sql, ':wordSearchPlus:', $wordSearchPlus, 'string');
-        $sql = $db->bindVars($sql, ':languagesId:', $_SESSION['languages_id'], 'integer');
-
-        $sqlResults = $db->Execute($sql);
-
-        if ($sqlResults->RecordCount() > 0) {
-
-            foreach ($sqlResults as $sqlResult) {
-
-                $totalMatches = 0;
-                $findSum      = null; // sum of first occurrences of words in the name
-
-                switch ($type) {
-                    case 'product':
-                    default:
-                        $id    = $sqlResult['products_id'];
-                        $name  = $sqlResult['products_name'];
-                        $img   = $sqlResult['products_image'];
-                        $model = $sqlResult['products_model'];
-                        $views = $sqlResult['products_viewed'];
-
-                        // check if product model is an exact match
-                        if (INSTANT_SEARCH_INCLUDE_PRODUCT_MODEL === 'true' && strtolower(trim(preg_replace('/\s+/', ' ', $model))) === strtolower(trim(preg_replace('/\s+/', ' ', $wordSearch)))) {
-                            $totalMatches++;
-                        }
-                        break;
-
-                    case 'category':
-                        $id    = $sqlResult['categories_id'];
-                        $name  = $sqlResult['categories_name'];
-                        $img   = $sqlResult['categories_image'];
-                        $model = '';
-                        $views = 0;
-                        break;
-
-                    case 'manufacturer':
-                        $id    = $sqlResult['manufacturers_id'];
-                        $name  = $sqlResult['manufacturers_name'];
-                        $img   = $sqlResult['manufacturers_image'];
-                        $model = '';
-                        $views = 0;
-                        break;
-                }
-
-                foreach ($wordSearchPlusArray as $word) {
-                    $word = stripslashes($word);
-                    $wordPos = stripos($name, $word);
-
-                    if ($wordPos !== false) { // search for word anywhere in the name
-                        $totalMatches++;
-                        $findSum += $wordPos;
-
-                        $mWord = preg_quote($word, '/');
-                        if (preg_match("/\b$mWord\b/i", $name)) { // exact words matches have a higher priority
-                            $totalMatches++;
-                        }
-                    } elseif ($type === 'product' && INSTANT_SEARCH_INCLUDE_PRODUCT_MODEL === 'true' && stripos($model, $word) === 0) { // search for word at the beginning of the product model
-                        $totalMatches++;
-                    }
-                }
-
-                $result = [
-                    'type'  => $type,
-                    'id'    => $id,
-                    'name'  => $name,
-                    'img'   => ($img ?? ''),
-                    'model' => $model,
-                    'mtch'  => $totalMatches,
-                    'views' => $views,
-                    'fsum'  => $findSum ?? INSTANT_SEARCH_MAX_WORDSEARCH_LENGTH
-                ];
-
-                $instantSearchResults[] = $result;
-            }
-        }
-
-        return $instantSearchResults;
-    }
-
-    /**
-     * Prepare the search result for display.
-     */
-    protected function formatSearchResult($result, $wordSearchPlus)
-    {
-        $formattedResult = [
-            'name'  => $this->highlightSearchWord($wordSearchPlus, strip_tags($result['name'])),
-            'img'   => INSTANT_SEARCH_DISPLAY_IMAGE === 'true' ? zen_image(DIR_WS_IMAGES . strip_tags($result['img']), strip_tags($result['img']), SMALL_IMAGE_WIDTH, SMALL_IMAGE_HEIGHT) : '',
-        ];
-
-        switch ($result['type']) {
-            case 'product':
-            default:
-                $formattedResult['link']  = zen_href_link(zen_get_info_page($result['id']), 'products_id=' . $result['id']);
-                $formattedResult['model'] = INSTANT_SEARCH_DISPLAY_PRODUCT_MODEL === 'true'
-                    ? (INSTANT_SEARCH_INCLUDE_PRODUCT_MODEL === 'true' ? $this->highlightSearchWord($wordSearchPlus, $result['model']) : $result['model'])
+                $dropdownResult['link']  = zen_href_link(zen_get_info_page($id), 'products_id=' . $id);
+                $dropdownResult['model'] = INSTANT_SEARCH_DROPDOWN_DISPLAY_PRODUCT_MODEL === 'true'
+                    ? $this->highlightSearchWords($model)
                     : '';
-                $formattedResult['price'] = INSTANT_SEARCH_DISPLAY_PRODUCT_PRICE === 'true' ? zen_get_products_display_price_instant_search($result['id']) : '';
-                break;
+                $dropdownResult['price'] = INSTANT_SEARCH_DROPDOWN_DISPLAY_PRODUCT_PRICE === 'true'
+                    ? !empty($result['products_displayed_price'])
+                        ? $result['products_displayed_price']
+                        : zen_get_products_display_price($id)
+                    : '';
+            } elseif (!empty($result['categories_id'])) {
+                if ($categoriesReached === false) {
+                    $dropdownResult['separator'] = BOX_HEADING_CATEGORIES;
+                    $categoriesReached = true;
+                    $dropdownResults[] = $dropdownResult;
+                    $dropdownResult = [];
+                }
+                $id    = $result['categories_id'];
+                $name  = $result['categories_name'];
+                $img   = $result['categories_image'];
 
-            case 'category':
-                $formattedResult['link']  = zen_href_link(FILENAME_DEFAULT, 'cPath=' . $result['id']);
-                $formattedResult['count'] = INSTANT_SEARCH_DISPLAY_CATEGORIES_COUNT === 'true' ? zen_count_products_in_category($result['id']) : '';
-                break;
+                $dropdownResult['link']  = zen_href_link(FILENAME_DEFAULT, 'cPath=' . $id);
+                $dropdownResult['count'] = INSTANT_SEARCH_DROPDOWN_DISPLAY_CATEGORIES_COUNT === 'true'
+                    ? !empty($result['categories_count'])
+                        ? $result['categories_count']
+                        : zen_count_products_in_category($id)
+                    : '';
+            } elseif (!empty($result['manufacturers_id'])) {
+                if ($manufacturersReached === false) {
+                    $dropdownResult['separator'] = BOX_HEADING_MANUFACTURERS;
+                    $manufacturersReached = true;
+                    $dropdownResults[] = $dropdownResult;
+                    $dropdownResult = [];
+                }
+                $id    = $result['manufacturers_id'];
+                $name  = $result['manufacturers_name'];
+                $img   = $result['manufacturers_image'];
 
-            case 'manufacturer':
-                $formattedResult['link']  = zen_href_link(FILENAME_DEFAULT, 'manufacturers_id=' . $result['id']);
-                $formattedResult['count'] = INSTANT_SEARCH_DISPLAY_MANUFACTURERS_COUNT === 'true' ? zen_count_products_for_manufacturer($result['id']) : '';
-                break;
+                $dropdownResult['link']  = zen_href_link(FILENAME_DEFAULT, 'manufacturers_id=' . $id);
+                $dropdownResult['count'] = INSTANT_SEARCH_DROPDOWN_DISPLAY_MANUFACTURERS_COUNT === 'true'
+                    ? !empty($result['manufacturers_count'])
+                        ? $result['manufacturers_count']
+                        : zen_count_products_for_manufacturer((int)$id)
+                    : '';
+            } else {
+                continue;
+            }
+
+            $dropdownResult['id']   = (int)$id;
+            $dropdownResult['name'] = $this->highlightSearchWords(strip_tags($name));
+            $dropdownResult['img'] = INSTANT_SEARCH_DROPDOWN_DISPLAY_IMAGE === 'true' && !empty($img)
+                ? zen_image(DIR_WS_IMAGES . strip_tags($img), strip_tags($name), INSTANT_SEARCH_DROPDOWN_IMAGE_WIDTH, INSTANT_SEARCH_DROPDOWN_IMAGE_HEIGHT)
+                : '';
+
+            $this->notify('NOTIFY_INSTANT_SEARCH_DROPDOWN_ADD_DROPDOWN_RESULT', $result, $dropdownResult);
+
+            $dropdownResults[] = $dropdownResult;
         }
 
-        $this->notify('NOTIFY_INSTANT_SEARCH_PRIOR_ADD_RESULT', $result['type'], $result, $formattedResult);
-
-        return $formattedResult;
+        ob_start();
+        require $template->get_template_dir('tpl_ajax_instant_search_results_dropdown.php', DIR_WS_TEMPLATE, FILENAME_DEFAULT, 'templates') . '/tpl_ajax_instant_search_results_dropdown.php';
+        return ob_get_clean();
     }
 
     /**
-     * Formats in bold the $word occurrences in $text.
+     * Returns the search results formatted with the page template.
+     *
+     * @param  array  $results
+     * @return string HTML output with the formatted results.
      */
-    protected function highlightSearchWord($word, $text)
+    protected function formatPageResults(array $results): string
     {
-        return preg_replace('/(' . str_replace('/', '\/', $word) . ')/i', '<strong>$1</strong>', $text);
+        global $zco_notifier, $current_page_base, $cPath, $request_type, $template, $db;
+
+        if (empty($results)) {
+            return '';
+        }
+
+        // ------
+        // Begin of constants and variables used by the product_listing module and the listing template
+        // ------
+
+        // Association between displayed fields and their column position in the listing
+        define("DEFINE_LIST", [
+            'PRODUCT_LIST_MODEL'        => PRODUCT_LIST_MODEL,
+            'PRODUCT_LIST_NAME'         => PRODUCT_LIST_NAME,
+            'PRODUCT_LIST_MANUFACTURER' => PRODUCT_LIST_MANUFACTURER,
+            'PRODUCT_LIST_PRICE'        => PRODUCT_LIST_PRICE,
+            'PRODUCT_LIST_QUANTITY'     => PRODUCT_LIST_QUANTITY,
+            'PRODUCT_LIST_WEIGHT'       => PRODUCT_LIST_WEIGHT,
+            'PRODUCT_LIST_IMAGE'        => PRODUCT_LIST_IMAGE
+        ]);
+
+        // Association between displayed fields and their database field names
+        define("DEFINE_DB_FIELDS", [
+            'PRODUCT_LIST_MODEL'        => 'products_model',
+            'PRODUCT_LIST_NAME'         => 'products_name',
+            'PRODUCT_LIST_MANUFACTURER' => 'manufacturers_name',
+            'PRODUCT_LIST_PRICE'        => 'products_price_sorter',
+            'PRODUCT_LIST_QUANTITY'     => 'products_quantity',
+            'PRODUCT_LIST_WEIGHT'       => 'products_weight',
+            'PRODUCT_LIST_IMAGE'        => 'products_name'
+        ]);
+
+        $_GET['main_page']       = FILENAME_INSTANT_SEARCH_RESULT;
+        $_GET['act']             = '';
+        $_GET['method']          = '';
+        $_GET['keyword']         = $_POST['keyword'];
+        $_GET['page']            = $_POST['resultPage'];
+        $_GET['alpha_filter_id'] = $_POST['alpha_filter_id'];
+        $_GET['sort']            = $_POST['sort'];
+
+        $define_list = DEFINE_LIST;
+        asort($define_list);
+        $column_list = [];
+        foreach ($define_list as $column => $value) {
+            if ($value) {
+                $column_list[] = $column;
+            }
+        }
+        $listing_split = (object)[
+            'number_of_rows' => count($results)
+        ];
+        $listing = $results;
+
+        // If we're not using MySQL as engine, we need to extract all the product fields from db, as they are
+        // needed by the product listing class
+        if (is_a($this->instantSearch, MysqlInstantSearch::class) === false) {
+            foreach ($listing as $k => $product) {
+                $sql = "
+                    SELECT *
+                    FROM " . TABLE_PRODUCTS . "
+                    WHERE products_id = :products_id
+                ";
+                $sql = $db->bindVars($sql, ':products_id', $product['products_id'], 'integer');
+                foreach ($db->Execute($sql) as $productField) {
+                    $listing[$k] = array_merge($listing[$k], $productField);
+                }
+            }
+        }
+
+        // ------
+        // End of constants and variables used by the product_listing module and the listing template
+        // ------
+
+
+        // Apply custom sort to the results based on $_POST['sort']
+        if (!empty($_POST['sort'])
+            && $_POST['sort'] !== '20a' // not equal to the default value
+            && preg_match('/[1-8][ad]/', $_GET['sort'])
+            && $_GET['sort'][0] <= count($column_list)
+        ) {
+            $sortCol     = $_GET['sort'][0];
+            $sortOrder   = substr($_GET['sort'], -1);
+            $sortDbField = DEFINE_DB_FIELDS[$column_list[$sortCol - 1]];
+            usort(
+                $results,
+                static fn ($prod1, $prod2) =>
+                $sortOrder === 'd'
+                    ? [$prod2[$sortDbField]] <=> [$prod1[$sortDbField]]
+                    : [$prod1[$sortDbField]] <=> [$prod2[$sortDbField]]
+            );
+            $listing = $results;
+        }
+
+
+        ob_start();
+        include(DIR_WS_MODULES . zen_get_module_directory(FILENAME_PRODUCT_LISTING_INSTANT_SEARCH));
+        require $template->get_template_dir('tpl_ajax_instant_search_results_listing.php', DIR_WS_TEMPLATE, FILENAME_DEFAULT, 'templates') . '/tpl_ajax_instant_search_results_listing.php';
+        return ob_get_clean();
+    }
+
+    /**
+     * Highlights in bold the tokens/suggestions in the results.
+     *
+     * @param string $text
+     * @return string
+     */
+    protected function highlightSearchWords(string $text): string
+    {
+        if (INSTANT_SEARCH_DROPDOWN_HIGHLIGHT_TEXT === 'none') {
+            return $text;
+        }
+
+        $searchQueryPreg =  str_replace(' ', '|', preg_replace('/\s+/', ' ', preg_quote($this->searchQuery, '&')));
+
+        return preg_replace('/(' . str_replace('/', '\/', $searchQueryPreg) . ')/i', '<span>$1</span>', $text);
+    }
+
+    /**
+     * For testing purposes.
+     *
+     * @return array
+     */
+    public function getResults(): array
+    {
+        return $this->results;
     }
 }
