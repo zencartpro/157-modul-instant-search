@@ -5,6 +5,7 @@
  * @version  4.0.3
  * @see      https://github.com/marco-pm/zencart_instantsearch
  * @license  GNU Public License V2.0
+ * Zen Cart German Specific
  * modified for Zen Cart German
  * 2024-04-05 webchills
  */
@@ -238,7 +239,7 @@ class zcAjaxInstantSearch extends base
                 $dropdownResult['price'] = INSTANT_SEARCH_DROPDOWN_DISPLAY_PRODUCT_PRICE === 'true'
                     ? !empty($result['products_displayed_price'])
                         ? $result['products_displayed_price']
-                        : zen_get_products_display_price($id)
+                        : zen_get_products_display_price_instant_search($id)
                     : '';
             } elseif (!empty($result['categories_id'])) {
                 if ($categoriesReached === false) {
