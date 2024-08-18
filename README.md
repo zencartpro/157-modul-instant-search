@@ -1,6 +1,8 @@
 # 157-modul-instant-search
 Sofortsuche für Zen Cart 1.5.7 deutsch
 
+# Dieses Modul ist seit 1.5.7i bereits im Grundsystem enthalten
+
 Hinweis: 
 Freigegebene getestete Versionen für den Einsatz in Livesystemen ausschließlich unter Releases herunterladen:
 * https://github.com/zencartpro/157-modul-instant-search/releases
